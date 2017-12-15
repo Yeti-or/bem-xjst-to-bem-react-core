@@ -1,0 +1,28 @@
+{
+  "name": "bem-xjst-to-bem-react-core",
+  "version": "0.0.0",
+  "description": "transform bem-xjst templates to bem-react-core",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yeti-or/bem-xjst-to-bem-react-core.git"
+  },
+  "keywords": [
+    "bem-xjst",
+    "bem-react-core"
+  ],
+  "author": "Vasiliy Loginevskiy <yeti.or@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Yeti-or/bem-xjst-to-bem-react-core/issues"
+  },
+  "homepage": "https://github.com/Yeti-or/bem-xjst-to-bem-react-core#readme",
+  "dependencies": {
+    "falafel": "^2.1.0",
+    "gulp-cst": "^1.1.0",
+    "vinyl-fs": "^3.0.0"
+  }
+}
