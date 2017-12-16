@@ -22,6 +22,8 @@ var devnull = require('./lib/devnull.js');
 // var blockNameShortcut = require('./lib/rules/blockNameShortcut.js');
 // var elemsIsArray = require('./lib/rules/elemsIsArray.js');
 
+const modes = [];
+
 class Mode {
     constructor(node) {
         this.name = node.name;
@@ -29,13 +31,105 @@ class Mode {
 
         if (node.parent.type === 'MemberExpression') {
             debugger;
+            console.log(this.name);
             this.body = node.parent.parent.parent.arguments[0];
             this.predicateNode = node.parent.object
         } else if (node.parent.type === 'CallExpression') {
             this.body = node.parent.parent.arguments[0];
-            this.predicateNode = node.parent.parent.parent;
-        } else {
-            console.log('!!WTF!!', name);
+            this.predicateNode = node.parent.parent.parent.callee;
+        }
+    }
+}
+
+const subPredicates = [];
+
+class SubPredicate {
+    constructor(node) {
+        this.name = node.name;
+        this.type = this.name;
+        this.node = node;
+        this.modes = [];
+        this.predicateParts = [this];
+
+        if (node.parent.type === 'MemberExpression') {
+            this.condition = node.parent.parent.arguments[0];
+            this.predicateNode = node.parent.parent;
+        } else if (node.parent.type === 'CallExpression') {
+            this.condition = node.parent.arguments[0];
+            this.predicateNode = node.parent;
+        }
+    }
+
+    findParentPredicates() {
+        // let node = this.predicateNode.parent;
+        let node = this.predicateNode;
+
+        console.log('\nfind:', this.name, '\n');
+
+        while (node.type !== 'Program') {
+            console.log(node.type);
+            let part;
+
+            if (
+                node.type === 'CallExpression'
+                &&
+                node.callee.type === 'CallExpression'
+            ) {
+                part = node.callee;
+                subPredicates.forEach(pre => {
+                    if (part === pre.predicateNode) {
+                        // this.predicateParts.push(pre);
+                        // this.predicateParts = this.predicateParts.concat(pre.predicateParts);
+                        pre.predicateParts.forEach(p => {
+                            this.predicateParts.includes(p) || this.predicateParts.push(p);
+                        });
+                    }
+                });
+            }
+
+            else if (
+                node.type === 'CallExpression'
+                &&
+                node.callee.type === 'MemberExpression'
+                &&
+                node.callee.object.type === 'CallExpression'
+            ) {
+                part = node.callee.object;
+                if (part !== this.predicateNode) {
+                    subPredicates.forEach(pre => {
+                        if (part === pre.predicateNode) {
+                            // this.predicateParts.push(pre);
+                            pre.predicateParts.forEach(p => {
+                                this.predicateParts.includes(p) || this.predicateParts.push(p);
+                            });
+                        }
+                    });
+                }
+            }
+
+            // if (node.type === 'MemberExpression') {
+            //     node = {parent: { type: 'Program' }};
+            // }
+
+            node = node.parent;
+        }
+    }
+}
+
+class MatchSubPredicate extends SubPredicate {
+    constructor(node) {
+        super(node);
+    }
+}
+
+class ModsSubPredicate extends SubPredicate {
+    constructor(node) {
+        super(node);
+
+        if (node.parent.type === 'MemberExpression') {
+            this.secondCondition = node.parent.parent.arguments[1];
+        } else if (node.parent.type === 'CallExpression') {
+            this.secondCondition = node.parent.arguments[1];
         }
     }
 }
@@ -88,9 +182,6 @@ export default decl({
             const content = [];
             const attrs = [];
             const blockNames = [];
-
-            const subPredicates = [];
-            const modes = [];
 
             const result = falafel(fileContent, { sourceType: 'module' }, node => {
 
@@ -221,7 +312,8 @@ export default decl({
                         node.parent.type === 'CallExpression' ||
                             (
                             node.parent.type === 'MemberExpression' &&
-                            node.parent.parent.type === 'CallExpression'
+                            node.parent.parent.type === 'CallExpression' &&
+                            node.parent.object.type === 'CallExpression'
                             )
                     ) {
                         if (
@@ -254,7 +346,17 @@ export default decl({
                             node.name === 'elemMod' ||
                             node.name === 'match'
                         ) {
-                            subPredicates.push(node);
+                            if (node.name === 'block' || node.name === 'elem') {
+                                subPredicates.push(new SubPredicate(node));
+                            }
+
+                            if (node.name === 'mod' || node.name === 'elemMod') {
+                                subPredicates.push(new ModsSubPredicate(node));
+                            }
+
+                            if (node.name === 'match') {
+                                subPredicates.push(new MatchSubPredicate(node));
+                            }
                         }
                     }
                 }
@@ -265,11 +367,30 @@ export default decl({
                 return (acc + decl(block, tags[i], attrs[i], content[i]));
             }, '');
 
-            console.log('Predicates\n');
-            subPredicates.forEach(pre => console.log(pre.name));
+            //console.log('\nSubPredicates:\n');
+            // subPredicates.forEach(pre => console.log(pre.name));
 
-            console.log('Modes\n');
+            console.log('\nModes:\n');
             modes.forEach(pre => console.log(pre.name));
+
+            console.log('\n====\n');
+
+            subPredicates.forEach(pre => {
+                modes.forEach(mode => {
+                    if (pre.predicateNode === mode.predicateNode) {
+                        pre.modes.push(mode);
+                    }
+                });
+
+                pre.findParentPredicates();
+            });
+
+            subPredicates.forEach(pre => {
+                console.log(
+                    pre.name, `(${pre.condition.type === 'Literal' ? pre.condition.value : 'fn'})`,
+                    'm:', pre.modes.length, 'parts:', pre.predicateParts.map(p => p.name).join()
+                );
+            });
 
             file.contents = Buffer.from(header + contents);
         } catch (err) {
@@ -279,7 +400,9 @@ export default decl({
 
         file.path = path.join(path.dirname(file.path), path.basename(file.path, '.bemhtml.js') + '.react.js');
 
+        console.log();
         console.log(file.path);
+        console.log();
         
         next(null, file);
     })
