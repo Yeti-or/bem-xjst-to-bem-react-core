@@ -22,6 +22,24 @@ var devnull = require('./lib/devnull.js');
 // var blockNameShortcut = require('./lib/rules/blockNameShortcut.js');
 // var elemsIsArray = require('./lib/rules/elemsIsArray.js');
 
+class Mode {
+    constructor(node) {
+        this.name = node.name;
+        this.node = node;
+
+        if (node.parent.type === 'MemberExpression') {
+            debugger;
+            this.body = node.parent.parent.parent.arguments[0];
+            this.predicateNode = node.parent.object
+        } else if (node.parent.type === 'CallExpression') {
+            this.body = node.parent.parent.arguments[0];
+            this.predicateNode = node.parent.parent.parent;
+        } else {
+            console.log('!!WTF!!', name);
+        }
+    }
+}
+
 
 module.exports = function(opts) {
 
@@ -48,19 +66,31 @@ import {decl} from '../../common.blocks/i-bem/i-bem.react';
 `;
 
 const attrsStr = attrs => attrs ?
-    Array.isArray(attrs) ? `attrs${attrs[0]} ${attrs[1]},` : `attrs: ${attrs}` :
+    Array.isArray(attrs) ? `attrs${attrs[0]} ${attrs[1]},` : `attrs: ${attrs},` :
     '';
 
-const decl = (block, tag, attrs) => `
+const tagStr = tag => tag ?
+    Array.isArray(tag) ? `tag${tag[0]} ${tag[1]},` : `tag: ${tag},` :
+    '';
+const contentStr = c => c ?
+    Array.isArray(c) ? `content${c[0]} ${c[1]},` : `content: ${c},` :
+    '';
+
+const decl = (block, tag, attrs, content) => `
 export default decl({
     block: '${block}',
-    ${tag ? `tag: '${tag}',` : ''}
+    ${tagStr(tag)}
     ${attrsStr(attrs)}
+    ${contentStr(content)}
 });
 `;
             const tags = [];
+            const content = [];
             const attrs = [];
             const blockNames = [];
+
+            const subPredicates = [];
+            const modes = [];
 
             const result = falafel(fileContent, { sourceType: 'module' }, node => {
 
@@ -69,13 +99,13 @@ export default decl({
                     node.callee.type === 'Identifier' &&
                     node.callee.name === 'block'
                 ) {
-                    console.log(tags);
                     const blockName = Object(node.arguments[0]).value
                     blockNames.push(blockName);
                     //const str = decl(blockName, tags[0]);
                     // node.update(str);
                 }
 
+                // Change ctx to props
                 if (
                     node.type === 'MemberExpression' && 
                     node.object.type === 'ThisExpression' &&
@@ -85,41 +115,29 @@ export default decl({
                     node.update(`this.props`)
                 }
 
-
+                // tags mode
                 if (
-                    node.type === 'CallExpression' &&
-                    node.callee.type === 'Identifier' &&
-                    node.callee.name === 'tag'
+                    node.type === 'BlockStatement' &&
+                    node.parent.type === 'FunctionExpression' &&
+                    node.parent.parent.type === 'CallExpression' &&
+                    node.parent.parent.callee.type === 'CallExpression' &&
+                    node.parent.parent.callee.callee.type === 'Identifier' &&
+                    node.parent.parent.callee.callee.name === 'tag'
                 ) {
-                    const callExpr = node.parent;
-                    if (callExpr.type === 'Litiral') {
-                        const tagName = callExpr.arguments[0].value;
-                        console.log(tagName);
-                        tags.push(tagName);
-                    // } else if (arg.type === 'FunctionExpression') {
-                    //     tags.push(['()', arg.body]);
-                    }
+                    tags.push(['()', node.source()]);
                 }
 
-                // if (
-                //     node.type === 'CallExpression' &&
-                //     node.callee.type === 'Identifier' &&
-                //     node.callee.name === 'attrs'
-                // ) {
-                //     const callExpr = node.parent;
-                //     if (callExpr.type === 'CallExpression') {
-                //         const arg = callExpr.arguments[0];
-                //         if (arg.type === 'Litiral') {
-                //             const tagName = callExpr.arguments[0].value;
-                //             console.log(tagName);
-                //             attrs.push(tagName);
-                //         } else if (arg.type === 'FunctionExpression') {
-                //             console.log(arg.body.toString());
-                //             attrs.push(['()', arg.body.toString()]);
-                //         }
-                //     }
-                // }
+                if (
+                    node.type === 'Literal' &&
+                    node.parent.type === 'CallExpression' &&
+                    node.parent.callee.type === 'CallExpression' &&
+                    node.parent.callee.callee.type === 'Identifier' &&
+                    node.parent.callee.callee.name === 'tag'
+                ) {
+                    tags.push(node.source());
+                }
 
+                // attrs mode
                 if (
                     node.type === 'BlockStatement' &&
                     node.parent.type === 'FunctionExpression' &&
@@ -141,14 +159,119 @@ export default decl({
                     attrs.push(node.source());
                 }
 
+                if (
+                    node.type === 'BlockStatement' &&
+                    node.parent.type === 'FunctionExpression' &&
+                    node.parent.parent.type === 'CallExpression' &&
+                    node.parent.parent.callee.type === 'CallExpression' &&
+                    node.parent.parent.callee.callee.type === 'MemberExpression' &&
+                    node.parent.parent.callee.callee.property.type === 'Identifier' &&
+                    node.parent.parent.callee.callee.property.name === 'attrs' &&
+                    node.parent.parent.callee.callee.object.type === 'CallExpression' &&
+                    node.parent.parent.callee.callee.object.callee.type === 'Identifier' &&
+                    node.parent.parent.callee.callee.object.callee.name === 'match'
+
+                ) {
+                    var match = node.parent.parent.callee.callee.object.arguments[0];
+                    const attrsStr = `{
+                        if (!${match.source()}.call(this)) { return; }
+                        ${node.body.reduce((acc, n) => { return acc += n.source(); }, '')}
+                    }`;
+                    attrs.push(['()', attrsStr]);
+                }
+
+
+                // content mode
+                if (
+                    node.type === 'Literal' &&
+                    node.parent.type === 'CallExpression' &&
+                    node.parent.callee.type === 'CallExpression' &&
+                    node.parent.callee.callee.type === 'Identifier' &&
+                    node.parent.callee.callee.name === 'content'
+                ) {
+                    content.push(node.source());
+                }
+
+                if (
+                    node.type === 'ObjectExpression' &&
+                    node.parent.type === 'CallExpression' &&
+                    node.parent.callee.type === 'CallExpression' &&
+                    node.parent.callee.callee.type === 'Identifier' &&
+                    node.parent.callee.callee.name === 'content'
+                ) {
+                    content.push(node.source());
+                }
+
+                if (
+                    node.type === 'BlockStatement' &&
+                    node.parent.type === 'FunctionExpression' &&
+                    node.parent.parent.type === 'CallExpression' &&
+                    node.parent.parent.callee.type === 'CallExpression' &&
+                    node.parent.parent.callee.callee.type === 'Identifier' &&
+                    node.parent.parent.callee.callee.name === 'content'
+                ) {
+                    content.push(['()', node.source()]);
+                }
+
+
+                if (
+                    node.type === 'Identifier'
+                ) {
+                    if (
+                        node.parent.type === 'CallExpression' ||
+                            (
+                            node.parent.type === 'MemberExpression' &&
+                            node.parent.parent.type === 'CallExpression'
+                            )
+                    ) {
+                        if (
+                            node.name === 'def' ||
+                            node.name === 'tag' ||
+                            node.name === 'attrs' ||
+                            node.name === 'addAttrs' ||
+                            node.name === 'content' ||
+                            node.name === 'appendContent' ||
+                            node.name === 'prependContent' ||
+                            node.name === 'mix' ||
+                            node.name === 'addMix' ||
+                            node.name === 'mods' ||
+                            node.name === 'addMods' ||
+                            node.name === 'elemMods' ||
+                            node.name === 'addElemMods' ||
+                            node.name === 'js' ||
+                            node.name === 'bem' ||
+                            node.name === 'cls' ||
+                            node.name === 'replace' ||
+                            node.name === 'wrap' ||
+                            node.name === 'extend' ||
+                            node.name === 'mode'
+                        ) {
+                            modes.push(new Mode(node));
+                        } else if (
+                            node.name === 'block' ||
+                            node.name === 'elem' ||
+                            node.name === 'mod' ||
+                            node.name === 'elemMod' ||
+                            node.name === 'match'
+                        ) {
+                            subPredicates.push(node);
+                        }
+                    }
+                }
             });
 
             //file.tree = parser.parse(fileContent);
-            const content = blockNames.reduce((acc, block, i) => {
-                return (acc + decl(block, tags[i], attrs[i]));
+            const contents = blockNames.reduce((acc, block, i) => {
+                return (acc + decl(block, tags[i], attrs[i], content[i]));
             }, '');
 
-            file.contents = Buffer.from(header + content);
+            console.log('Predicates\n');
+            subPredicates.forEach(pre => console.log(pre.name));
+
+            console.log('Modes\n');
+            modes.forEach(pre => console.log(pre.name));
+
+            file.contents = Buffer.from(header + contents);
         } catch (err) {
             file.error = err;
             console.log(err);
