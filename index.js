@@ -27,6 +27,7 @@ const modes = [];
 class Mode {
     constructor(node) {
         this.name = node.name;
+        this.type = this.name;
         this.node = node;
 
         if (node.parent.type === 'MemberExpression') {
@@ -39,6 +40,139 @@ class Mode {
             this.predicateNode = node.parent.parent.parent.callee;
         }
     }
+
+    toString() {
+        return `${this.type}: ${this.body.source()}`;
+    }
+}
+
+function blockDecl(blockName, modes) {
+    let decl = 'decl';
+
+    decl += '({\n';
+    decl += `block: ${blockName},`;
+
+    // TODO: TEMPORARY
+    decl += `modes: ${modes.length},`;
+
+    decl += '\n})'
+    return decl;
+}
+
+function elemDecl(blockName, elemName, modes) {
+    let decl = 'decl';
+
+    decl += '({\n';
+    decl += `block: ${blockName},`;
+    decl += `elem: ${elemName},`;
+
+    // TODO: TEMPORARY
+    decl += `modes: ${modes.length},`;
+
+    decl += '\n})'
+    return decl;
+}
+
+function modDecl(blockName, mods, modes) {
+    let decl = 'decl';
+
+    decl += 'Mod({';
+    decl += mods
+        .map(m => `${m.modName} : ${m.modVal}`)
+        .join(', ');
+    decl += '}, {\n';
+    decl += `block: ${blockName},`;
+
+    // TODO: TEMPORARY
+    decl += `modes: ${modes.length},`;
+
+    decl += '\n})'
+    return decl;
+}
+
+function elemModDecl(blockName, elemName, mods, modes) {
+    let decl = 'decl';
+
+    decl += 'Mod({';
+    decl += mods
+        .map(m => `${m.modName} : ${m.modVal}`)
+        .join(', ');
+    decl += '}, {\n';
+    decl += `block: ${blockName},`;
+    decl += `elem: ${elemName},`;
+
+    // TODO: TEMPORARY
+    decl += `modes: ${modes.length},`;
+
+    decl += '\n})'
+    return decl;
+}
+
+function buildPredicate(p) {
+    const decls = [];
+
+    // one sub-predicate
+    const blockSP = p.predicateParts.filter(sub => sub.type === 'block')[0];
+    const elemSP = p.predicateParts.filter(sub => sub.type === 'elem')[0];
+    // Arrays
+    const modSPs = p.predicateParts.filter(sub => sub.type === 'mod');
+    const elemModSPs = p.predicateParts.filter(sub => sub.type === 'elemMod');
+    const matchSPs = p.predicateParts.filter(sub => sub.type === 'match');
+
+    // TODO: matchSPs
+
+    if (elemSP) {
+        decls.push(
+            elemDecl(
+                blockSP.condition.source(),
+                elemSP.condition.source(),
+                p.modes
+            )
+        );
+
+        if (elemModSPs.length) {
+            decls.push(
+                elemModDecl(
+                    blockSP.condition.source(),
+                    elemSP.condition.source(),
+                    elemMods.map(sp => {
+                        return {
+                            modName: sp.condition.source(),
+                            modVal: sp.secondCondition ? sp.secondCondition.source() : '*'
+                        };
+                    }),
+                    p.modes
+                )
+            );
+        }
+
+        if (modDecl.length) {
+            // TODO add context to block decl and use them in modDecl
+        }
+    } else {
+        decls.push(
+            blockDecl(
+                blockSP.condition.source(),
+                p.modes
+            )
+        );
+        if (modSPs.length) {
+            decls.push(
+                modDecl(
+                    blockSP.condition.source(),
+                    modSPs.map(sp => {
+                        return {
+                            modName: sp.condition.source(),
+                            modVal: sp.secondCondition ? sp.secondCondition.source() : '*'
+                        };
+                    }),
+                    p.modes
+                )
+            );
+        }
+    }
+
+    return decls;
 }
 
 const subPredicates = [];
@@ -60,6 +194,17 @@ class SubPredicate {
         }
     }
 
+    // toString() {
+    //     let decl = 'decl';
+    //     if (this.type === 'block' || this.type === 'elem') {
+    //         decl += '({';
+    //         if (this.type === 'block') {
+    //             decl += `block: ${this.condition}`
+    //         }
+    //     }
+    // }
+
+    // TODO: move to static
     findParentPredicates() {
         // let node = this.predicateNode.parent;
         let node = this.predicateNode;
@@ -76,15 +221,17 @@ class SubPredicate {
                 node.callee.type === 'CallExpression'
             ) {
                 part = node.callee;
-                subPredicates.forEach(pre => {
-                    if (part === pre.predicateNode) {
-                        // this.predicateParts.push(pre);
-                        // this.predicateParts = this.predicateParts.concat(pre.predicateParts);
-                        pre.predicateParts.forEach(p => {
-                            this.predicateParts.includes(p) || this.predicateParts.push(p);
-                        });
-                    }
-                });
+                if (part !== this.predicateNode) {
+                    subPredicates.forEach(pre => {
+                        if (part === pre.predicateNode) {
+                            // this.predicateParts.push(pre);
+                            // this.predicateParts = this.predicateParts.concat(pre.predicateParts);
+                            pre.predicateParts.forEach(p => {
+                                this.predicateParts.includes(p) || this.predicateParts.push(p);
+                            });
+                        }
+                    });
+                }
             }
 
             else if (
@@ -107,7 +254,8 @@ class SubPredicate {
                 }
             }
 
-            // if (node.type === 'MemberExpression') {
+            // TODO: we have bad traverse here but I'm tired
+            // if (node.type === 'MemberExpression' && node.parent.parent.type === 'MemberExpression') {
             //     node = {parent: { type: 'Program' }};
             // }
 
@@ -196,12 +344,22 @@ export default decl({
                     // node.update(str);
                 }
 
-                // Change ctx to props
+                // Change this.ctx to props
                 if (
-                    node.type === 'MemberExpression' && 
+                    node.type === 'MemberExpression' &&
                     node.object.type === 'ThisExpression' &&
                     node.property.type === 'Identifier' &&
                     node.property.name === 'ctx'
+                ) {
+                    node.update(`this.props`)
+                }
+
+                // Change this.mods to props
+                if (
+                    node.type === 'MemberExpression' &&
+                    node.object.type === 'ThisExpression' &&
+                    node.property.type === 'Identifier' &&
+                    node.property.name === 'mods'
                 ) {
                     node.update(`this.props`)
                 }
@@ -385,14 +543,18 @@ export default decl({
                 pre.findParentPredicates();
             });
 
+            let decls = [];
             subPredicates.forEach(pre => {
                 console.log(
                     pre.name, `(${pre.condition.type === 'Literal' ? pre.condition.value : 'fn'})`,
                     'm:', pre.modes.length, 'parts:', pre.predicateParts.map(p => p.name).join()
                 );
+                if (pre.modes.length) {
+                    decls = decls.concat(buildPredicate(pre));
+                }
             });
 
-            file.contents = Buffer.from(header + contents);
+            file.contents = Buffer.from(header + decls.join('\n'));
         } catch (err) {
             file.error = err;
             console.log(err);
