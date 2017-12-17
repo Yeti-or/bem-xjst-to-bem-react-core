@@ -53,7 +53,7 @@ function blockDecl(blockName, modes) {
     decl += `block: ${blockName},`;
 
     // TODO: TEMPORARY
-    decl += `modes: ${modes.length},`;
+    decl += modes.map(mode => mode.toString()).join(',\n');
 
     decl += '\n})'
     return decl;
