@@ -58,6 +58,36 @@ class Mode {
     }
 }
 
+// TODO separate js mode from def mode
+// TODO improve Component name inside HOC
+class ModeHOC extends Mode {
+    constructor(node) {
+        super(node);
+        this.isHoc = true;
+    }
+
+    toString(matchers) {
+        let fn = '(Component) => (props) => {';
+        let retComp = this.type === 'def' ? 'return <Component {...props} />;' : 'return <Component {...props} {...__ret} />;';
+        if (matchers.length) {
+            fn += matchers.map(match => `if (!(${match}.call(this))) { return ${retComp}; }`).join('\n');
+        }
+        if (this.body.type === 'FunctionExpression') {
+            fn += `const __ret = (function(applyNext) {
+                ${this.body.body.body.map(statement => statement.source()).join('\n')}
+            }.bind({ props }))(() => {});
+            `;
+        } else {
+            // TODO: Do smth here
+            fn += `return ${this.body.source()};`;
+        }
+        fn += '\n';
+        fn += retComp;
+        fn += '}';
+        return fn;
+    }
+}
+
 function blockDecl(blockName, modes, matchers) {
     let decl = 'decl';
 
@@ -65,9 +95,24 @@ function blockDecl(blockName, modes, matchers) {
     decl += `block: ${blockName},`;
 
     // TODO: TEMPORARY
-    decl += modes.map(mode => mode.toString(matchers)).join(',\n');
+    let hocModes = [];
+    decl += modes.map(mode => {
+        if (mode.isHoc) {
+            hocModes.push(mode.toString(matchers));
+            return false
+        } else {
+            return mode.toString(matchers)
+        }
+    }).filter(Boolean).join(',\n');
 
-    decl += '\n})'
+    if (hocModes.length) {
+        decl += '},\n';
+        decl += hocModes.join(',\n');
+        decl += '\n);'
+    } else {
+        decl += '\n})'
+    }
+
     return decl;
 }
 
@@ -523,7 +568,11 @@ export default decl({
                             node.name === 'extend' ||
                             node.name === 'mode'
                         ) {
-                            modes.push(new Mode(node));
+                            if (node.name === 'def' ||  node.name === 'js') {
+                                modes.push(new ModeHOC(node));
+                            } else {
+                                modes.push(new Mode(node));
+                            }
                         } else if (
                             node.name === 'block' ||
                             node.name === 'elem' ||
