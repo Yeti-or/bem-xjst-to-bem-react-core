@@ -1,6 +1,15 @@
 const fs = require('fs');
 const path = require('path');
 
+const nEval = require('node-eval');
+const bemImport = require('@bem/import-notation');
+const bemjsonToJSX = require('bemjson-to-jsx');
+const bemjsonToDecl = require('bemjson-to-decl');
+const BemEntity = require('@bem/entity-name');
+const naming = require('@bem/naming');
+const pascalCase = require('pascal-case');
+
+
 // var bemConfig = require('bem-config')();
 // var assign = require('assign-deep');
 // var betterc = require('betterc');
@@ -68,14 +77,16 @@ class ModeHOC extends Mode {
 
     toString(matchers) {
         let fn = '(Component) => (props) => {';
-        let retComp = this.type === 'def' ? 'return <Component {...props} />;' : 'return <Component {...props} {...__ret} />;';
+        let retComp = this.type === 'def' ? 'return <Component {...__props} />;' : 'return <Component {...__props} {...__ret} />;';
         if (matchers.length) {
             fn += matchers.map(match => `if (!(${match}.call(this))) { return ${retComp}; }`).join('\n');
         }
         if (this.body.type === 'FunctionExpression') {
-            fn += `const __ret = (function(applyNext) {
+            fn += `
+            const __props = { ...props };
+            const __ret = (function(applyNext) {
                 ${this.body.body.body.map(statement => statement.source()).join('\n')}
-            }.bind({ props }))(() => {});
+            }.bind({ props: __props }))(() => {});
             `;
         } else {
             // TODO: Do smth here
@@ -94,7 +105,6 @@ function blockDecl(blockName, modes, matchers) {
     decl += '({\n';
     decl += `block: ${blockName},`;
 
-    // TODO: TEMPORARY
     let hocModes = [];
     decl += modes.map(mode => {
         if (mode.isHoc) {
@@ -105,6 +115,7 @@ function blockDecl(blockName, modes, matchers) {
         }
     }).filter(Boolean).join(',\n');
 
+    // TODO actually we need several decls for each hoc
     if (hocModes.length) {
         decl += '},\n';
         decl += hocModes.join(',\n');
@@ -363,10 +374,21 @@ return fileNames =>
     through.obj(function(file, enc, next) {
         var fileContent = file.contents.toString(enc);
         try {
+            // TODO decl/declMod and path to react need be params
 const header = `import React from 'react';
-import {decl} from '../../common.blocks/i-bem/i-bem.react';
+import {decl, declMod} from '../../common.blocks/i-bem/i-bem.react';
+
+const isSimple = (obj) => typeof obj === 'string' || typeof obj === 'number';
 
 `;
+
+const importResolver = (className, entity, entities) => {
+    return [`import ${className} from '${bemImport.stringify(entities)}';`];
+};
+
+const imports = [];
+const importsPerFile = new Map();
+
 
 const attrsStr = attrs => attrs ?
     Array.isArray(attrs) ? `attrs${attrs[0]} ${attrs[1]},` : `attrs: ${attrs},` :
@@ -433,6 +455,80 @@ export default decl({
                     node.property.name === 'xmlEscape'
                 ) {
                     node.update('');
+                }
+
+                // Change isSimple to global
+                if (
+                    node.type === 'MemberExpression' &&
+                    node.object.type === 'ThisExpression' &&
+                    node.property.type === 'Identifier' &&
+                    node.property.name === 'isSimple'
+                ) {
+                    node.update('isSimple');
+                }
+
+                // TODO o maybe not
+                // Change extend to Object.assign
+                if (
+                    node.type === 'MemberExpression' &&
+                    node.object.type === 'ThisExpression' &&
+                    node.property.type === 'Identifier' &&
+                    node.property.name === 'extend'
+                ) {
+                    node.update('Object.assign');
+                }
+
+                if (
+                    node.type === 'ObjectExpression' &&
+                    node.properties.length !== 0
+                ) {
+                    const hasBlock = false;
+                    const isBemjson = node.properties.filter(prop => {
+                        if (prop.key.name === 'block') {
+                            hasBlock = true;
+                            return true;
+                        }
+                        return prop.key.name === 'elem';
+                    }).length !== 0;
+                    if (isBemjson) {
+                        // const bemjson = nEval(node.source());
+                        const bemjson = `{
+                            ${
+                                node.properties.map(prop =>
+                                    `"${prop.key.source()}": ${
+                                            ( prop.value.type === 'Literal' || prop.value.type === 'ObjectExpression' ) ?
+                                                `${prop.value.source()}` :
+                                                `"_${prop.value.source()}_"`
+                                        }`
+                                ).join(',\n')
+                            }
+                        }`;
+                        const bemJSON = nEval(`(${bemjson})`);
+                        // if (!hasBlock) {
+                            // TODO get block from context
+                            bemJSON.block = 'Button2';
+                        //}
+                        console.log(bemJSON);
+
+                        bemjsonToDecl.convert(bemJSON)
+                            .map(BemEntity.create)
+                            .reduce((acc, entity) => {
+                                // group by block and elems
+                                const entityId = BemEntity.create({ block: entity.block, elem: entity.elem }).toString();
+                                acc.has(entityId) ? acc.get(entityId).push(entity) : acc.set(entityId, [entity]);
+                                return acc;
+                            }, importsPerFile);
+
+                        console.log(imports);
+
+                        const JSX = bemjsonToJSX().process(bemJSON).JSX;
+                        console.log(JSX);
+                        node.update(`(${
+                            JSX
+                                .replace('{"_', '{').replace('_"}', '}')
+                                .replace('"_', '{').replace('_"', '}')
+                        })`);
+                    }
                 }
 
                 // tags mode
@@ -630,7 +726,13 @@ export default decl({
                 }
             });
 
-            file.contents = Buffer.from(header + decls.join('\n'));
+            importsPerFile.forEach((entities, entityId) => {
+                const entity = naming.parse(entityId);
+                const className = pascalCase(entityId);
+                imports.push(...importResolver(className, entity, entities));
+            });
+            console.log(imports);
+            file.contents = Buffer.from(header + imports.join('\n') + `\nmodule.exports = ${decls.join('\n')}`);
         } catch (err) {
             file.error = err;
             console.log(err);

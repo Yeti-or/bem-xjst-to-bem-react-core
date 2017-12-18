@@ -21,8 +21,15 @@
   },
   "homepage": "https://github.com/Yeti-or/bem-xjst-to-bem-react-core#readme",
   "dependencies": {
+    "@bem/entity-name": "^1.5.0",
+    "@bem/import-notation": "^1.1.2",
+    "@bem/naming": "^2.0.0-6",
+    "bemjson-to-decl": "^1.0.3",
+    "bemjson-to-jsx": "^1.9.1",
     "falafel": "^2.1.0",
     "gulp-cst": "^1.1.0",
+    "node-eval": "^2.0.0",
+    "pascal-case": "^2.0.1",
     "vinyl-fs": "^3.0.0"
   }
 }
