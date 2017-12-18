@@ -105,6 +105,19 @@ function blockDecl(blockName, modes, matchers) {
     decl += '({\n';
     decl += `block: ${blockName},`;
 
+    // TODO: add these mode if there is no and option for _visible => _visible_yes
+    // ANd add this only if there is no mods mode per all definition for this block
+    decl += `
+        // If there is no mods()() mode
+        mods() {
+            return Object.entries(this.props).reduce((acc, [key, val]) => {
+                acc[key] = val === true ? 'yes' : val;
+                return acc;
+            }, {});
+            return { ...this.props };
+        },
+    `;
+
     let hocModes = [];
     decl += modes.map(mode => {
         if (mode.isHoc) {
