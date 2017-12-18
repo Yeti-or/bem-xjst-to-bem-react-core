@@ -41,19 +41,31 @@ class Mode {
         }
     }
 
-    toString() {
-        return `${this.type}: ${this.body.source()}`;
+    toString(matchers) {
+        if (matchers.length) {
+            let fn = 'function() {';
+            fn += matchers.map(match => `if (!(${match}.call(this))) { return; }`).join('\n');
+            if (this.body.type === 'FunctionExpression') {
+                fn += this.body.body.body.map(statement => statement.source()).join('\n');
+            } else {
+                fn += `return ${this.body.source()};`;
+            }
+            fn += '}';
+            return `${this.type}: ${fn}`;
+        } else {
+            return `${this.type}: ${this.body.source()}`;
+        }
     }
 }
 
-function blockDecl(blockName, modes) {
+function blockDecl(blockName, modes, matchers) {
     let decl = 'decl';
 
     decl += '({\n';
     decl += `block: ${blockName},`;
 
     // TODO: TEMPORARY
-    decl += modes.map(mode => mode.toString()).join(',\n');
+    decl += modes.map(mode => mode.toString(matchers)).join(',\n');
 
     decl += '\n})'
     return decl;
@@ -117,7 +129,7 @@ function buildPredicate(p) {
     // Arrays
     const modSPs = p.predicateParts.filter(sub => sub.type === 'mod');
     const elemModSPs = p.predicateParts.filter(sub => sub.type === 'elemMod');
-    const matchSPs = p.predicateParts.filter(sub => sub.type === 'match');
+    const matchSPs = p.predicateParts.filter(sub => sub.type === 'match') || [];
 
     // TODO: matchSPs
 
@@ -126,7 +138,8 @@ function buildPredicate(p) {
             elemDecl(
                 blockSP.condition.source(),
                 elemSP.condition.source(),
-                p.modes
+                p.modes,
+                matchSPs.map(sp => sp.condition.source())
             )
         );
 
@@ -141,7 +154,8 @@ function buildPredicate(p) {
                             modVal: sp.secondCondition ? sp.secondCondition.source() : '*'
                         };
                     }),
-                    p.modes
+                    p.modes,
+                    matchSPs.map(sp => sp.condition.source())
                 )
             );
         }
@@ -153,7 +167,8 @@ function buildPredicate(p) {
         decls.push(
             blockDecl(
                 blockSP.condition.source(),
-                p.modes
+                p.modes,
+                matchSPs.map(sp => sp.condition.source())
             )
         );
         if (modSPs.length) {
@@ -166,7 +181,8 @@ function buildPredicate(p) {
                             modVal: sp.secondCondition ? sp.secondCondition.source() : '*'
                         };
                     }),
-                    p.modes
+                    p.modes,
+                    matchSPs.map(sp => sp.condition.source())
                 )
             );
         }
@@ -351,7 +367,7 @@ export default decl({
                     node.property.type === 'Identifier' &&
                     node.property.name === 'ctx'
                 ) {
-                    node.update(`this.props`)
+                    node.update(`this.props`);
                 }
 
                 // Change this.mods to props
@@ -361,7 +377,17 @@ export default decl({
                     node.property.type === 'Identifier' &&
                     node.property.name === 'mods'
                 ) {
-                    node.update(`this.props`)
+                    node.update(`this.props`);
+                }
+
+                // Remove this.xmlEscape
+                if (
+                    node.type === 'MemberExpression' &&
+                    node.object.type === 'ThisExpression' &&
+                    node.property.type === 'Identifier' &&
+                    node.property.name === 'xmlEscape'
+                ) {
+                    node.update('');
                 }
 
                 // tags mode
@@ -451,6 +477,7 @@ export default decl({
                     content.push(node.source());
                 }
 
+                // select(' CallExpression > CallExpression > BlockStatement [callee=Identifier] ')
                 if (
                     node.type === 'BlockStatement' &&
                     node.parent.type === 'FunctionExpression' &&
