@@ -9,6 +9,12 @@ const pascalCase = require('pascal-case');
 
 const { BemReactDecl } = require('./lib/bem-react-core');
 
+const is_debug = process.env.DEBUG || false;
+
+const log = function() {
+    is_debug && console.log.apply(console, arguments);
+}
+
 class Mode {
     constructor(node) {
         this.name = node.name;
@@ -18,7 +24,7 @@ class Mode {
         this.matchers = [];
 
         if (node.parent.type === 'MemberExpression') {
-            console.log(this.name);
+            log(this.name);
             this.body = node.parent.parent.parent.arguments[0];
             this.predicateNode = node.parent.object
         } else if (node.parent.type === 'CallExpression') {
@@ -27,7 +33,7 @@ class Mode {
         }
     }
 
-    toString() {
+    toBodyString() {
         const matchers = this.matchers;
         if (matchers.length) {
             let fn = 'function() {';
@@ -38,10 +44,14 @@ class Mode {
                 fn += `return ${this.body.source()};`;
             }
             fn += '}';
-            return `${this.type}: ${fn}`;
+            return fn;
         } else {
-            return `${this.type}: ${this.body.source()}`;
+            return this.body.source();
         }
+    }
+
+    toString() {
+        return `${this.type}: ${this.toBodyString()}`;
     }
 }
 
@@ -101,6 +111,32 @@ class ModsMode {
     }
 }
 
+class AddAttrsFakeMode {
+    constructor(attrsMode, addAttrsMode) {
+        this.name = 'attrs';
+        this.type = 'attrs';
+        this.attrsMode = attrsMode;
+        this.addAttrsMode = addAttrsMode;
+    }
+
+    toString() {
+        return `
+            attrs({ attrs }) {
+                const __attrs = ${
+                    this.attrsMode ?
+                    `${this.attrsMode.toBodyString()}.call(this)` :
+                    `attrs`
+                };
+
+                const __addAttrs = ${
+                    `${this.addAttrsMode.toBodyString()}.call(this)`
+                };
+
+                return {...__attrs, ...__addAttrs};
+            },
+        `;
+    }
+}
 
 function buildDeclsFromPredicate(p) {
     const decls = new Map();
@@ -141,6 +177,15 @@ function buildDeclsFromPredicate(p) {
             decl.addMode(mode.name, mode);
         }
     });
+
+    if (decl.hasMode('addAttrs')) {
+        const addAttrsMode = decl.getMode('addAttrs');
+        decl.deleteMode('addAttrs');
+        const attrsMode = decl.getMode('attrs');
+
+        const fakeAddAttrsMode = new AddAttrsFakeMode(attrsMode, addAttrsMode);
+        decl.replaceMode('attrs', fakeAddAttrsMode);
+    }
 
     decls.set(bemEntity, decl);
 
@@ -257,10 +302,10 @@ class SubPredicate {
         // let node = this.predicateNode.parent;
         let node = this.predicateNode;
 
-        console.log('\nfind:', this.name, '\n');
+        log('\nfind:', this.name, '\n');
 
         while (node.type !== 'Program') {
-            console.log(node.type);
+            log(node.type);
             let part;
 
             if (
@@ -335,9 +380,10 @@ class ModsSubPredicate extends SubPredicate {
 function transform(opts={}) {
 
 const bemReactPath = opts.bemPath || require.resolve('bem-react-core');
+const importReact = opts.noReactImport ? '' : `import React from 'react';`;
 
 // TODO decl/declMod and path to react need be params
-const header = `import React from 'react';
+const header = `${importReact}
 import {decl, declMod} from '${bemReactPath}';
 
 const isSimple = (obj) => typeof obj === 'string' || typeof obj === 'number';
@@ -439,7 +485,7 @@ return function(code, mainEntity) {
                     // TODO get block from context
                     bemJSON.block = 'Button2';
                 //}
-                console.log(bemJSON);
+                log(bemJSON);
 
                 bemjsonToDecl.convert(bemJSON)
                     .map(BemEntity.create)
@@ -450,10 +496,10 @@ return function(code, mainEntity) {
                         return acc;
                     }, importsPerFile);
 
-                console.log(imports);
+                log(imports);
 
                 const JSX = bemjsonToJSX().process(bemJSON).JSX;
-                console.log(JSX);
+                log(JSX);
                 node.update(`(${
                     JSX
                         .replace('{"_', '{').replace('_"}', '}')
@@ -524,10 +570,10 @@ return function(code, mainEntity) {
     });
 
 
-    console.log('\nModes:\n');
-    modes.forEach(pre => console.log(pre.name));
+    log('\nModes:\n');
+    modes.forEach(pre => log(pre.name));
 
-    console.log('\n====\n');
+    log('\n====\n');
 
     subPredicates.forEach(pre => {
         modes.forEach(mode => {
@@ -542,7 +588,7 @@ return function(code, mainEntity) {
     const declsMap = new Map();
     subPredicates.forEach(pre => {
 
-        console.log(
+        log(
             pre.name, `(${pre.condition.type === 'Literal' ? pre.condition.value : 'fn'})`,
             'm:', pre.modes.length, 'parts:', pre.predicateParts.map(p => p.name).join()
         );
@@ -561,6 +607,10 @@ return function(code, mainEntity) {
 
     let declsStr = '\n\n';
     let exportStr = '';
+
+    const applyDecls = opts.needToApplyDecls;
+    const bemjsonLike = opts.needBemjsonLikeAPI;
+
     declsMap.forEach((decls, entityID) => {
         const variableName = pascalCase(entityID);
 
@@ -569,14 +619,18 @@ return function(code, mainEntity) {
 
         declsStr += decls.map((decl, i) => {
             if (i === 0) {
-                if (needModsMode) {
+                if (opts.needModsMode && needModsMode) {
                     decl.addMode('mods', new ModsMode());
                 }
                 return `const ${variableName} = ${decl.toString()}`;
             } else {
-                return decl.toString();
+                return `${decl.toString()}`;
             }
-        }).join('\n\n');
+        }).join(applyDecls ? ', \n\n' : ';\n\n');
+
+        if (applyDecls) {
+            declsStr += '.applyDecls();';
+        }
 
         if (mainEntity && entityID === mainEntity.id) {
             exportStr += `\nexport default ${variableName};`;
@@ -595,7 +649,8 @@ return function(code, mainEntity) {
         imports,
         decls: declsMap,
         declsStr,
-        exportStr
+        exportStr,
+        body: header + imports.join('\n') + declsStr + exportStr
     };
 };
 

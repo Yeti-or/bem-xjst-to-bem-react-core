@@ -148,7 +148,7 @@ return fileNames =>
             const XJST2REACT = transform(Object.assign(opts, { bemPath }));
             const data = XJST2REACT(file.contents, mainEntity);
 
-            file.contents = Buffer.from(data.header + data.imports.join('\n') + data.declsStr + data.exportStr);
+            file.contents = Buffer.from(data.body);
         } catch (err) {
             file.error = err;
             console.log(err);
