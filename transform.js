@@ -91,7 +91,7 @@ class ModeHOC extends Mode {
             }
             if (thisCallRegExp().test(this.body.source())) {
                 fn += `
-                    const __props = { ...props };
+                    const __props = { block: '${this.blockName}', ${ this.elemName ? `elem: '${this.elemName}',` : '' } ...props };
                     debugger;
                     // TODO: You probably want to reWrite it!
                     const instance = new Component(__props);
@@ -101,7 +101,7 @@ class ModeHOC extends Mode {
                 `;
             } else {
                 fn += `
-                    const __props = { ...props };
+                    const __props = { block: '${this.blockName}', ${ this.elemName ? `elem: '${this.elemName}',` : '' } ...props };
                     const __ret = (function(applyNext) {
                         ${this.body.body.body.map(statement => statement.source()).join('\n')}
                     }.bind({ props: __props }))(() => {});
@@ -223,6 +223,10 @@ function buildDeclsFromPredicate(p) {
         }
 
         if (mode.type === 'def' || mode.type === 'js') {
+
+            mode.blockName = blockName;
+            mode.elemName = elemName;
+
             if (decl.hoc) {
                 // We could add only one hoc per decl
                 const extraDecl = new BemReactDecl(bemEntity, [], mode);
@@ -432,7 +436,7 @@ class ModsSubPredicate extends SubPredicate {
 
 function transform(opts={}) {
 
-const bemReactPath = opts.bemPath || require.resolve('bem-react-core');
+const bemReactPath = opts.bemPath || 'bem-react-core';
 const importReact = opts.noReactImport ? '' : `import React from 'react';`;
 const bemjsonLike = opts.needBemjsonLikeAPI;
 bemjsonLike && (opts.needModsMode = true);
@@ -713,13 +717,15 @@ return function(code, mainEntity) {
         imports.push(...importResolver(className, entity, entities));
     });
 
+    const importsStr = imports.join('\n');
+
     return {
         header,
         imports,
         decls: declsMap,
         declsStr,
         exportStr,
-        body: header + imports.join('\n') + declsStr + exportStr
+        body: header + importsStr + declsStr + exportStr
     };
 };
 
