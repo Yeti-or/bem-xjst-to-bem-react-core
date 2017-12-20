@@ -66,6 +66,8 @@ class Mode {
     }
 }
 
+const thisCallRegExp = () => /this\.(\w)+\(/g;
+
 // TODO separate js mode from def mode
 // TODO improve Component name inside HOC
 class ModeHOC extends Mode {
@@ -83,12 +85,28 @@ class ModeHOC extends Mode {
             fn += matchers.map(match => `if (!(${match}.call(this))) { return ${retComp}; }`).join('\n');
         }
         if (this.body.type === 'FunctionExpression') {
-            fn += `
-            const __props = { ...props };
-            const __ret = (function(applyNext) {
-                ${this.body.body.body.map(statement => statement.source()).join('\n')}
-            }.bind({ props: __props }))(() => {});
-            `;
+            // TODO: need to rewrite this
+            if (this.type === 'def' && !~this.body.source().indexOf('applyNext(')) {
+                retComp = 'return __ret;';
+            }
+            if (thisCallRegExp().test(this.body.source())) {
+                fn += `
+                    const __props = { ...props };
+                    debugger;
+                    // TODO: You probably want to reWrite it!
+                    const instance = new Component(__props);
+                    const __ret = (function(applyNext) {
+                        ${this.body.body.body.map(statement => statement.source()).join('\n')}
+                    }.bind(instance))(() => {});
+                `;
+            } else {
+                fn += `
+                    const __props = { ...props };
+                    const __ret = (function(applyNext) {
+                        ${this.body.body.body.map(statement => statement.source()).join('\n')}
+                    }.bind({ props: __props }))(() => {});
+                `;
+            }
         } else {
             // TODO: Do smth here
             fn += `return ${this.body.source()};`;
@@ -101,24 +119,34 @@ class ModeHOC extends Mode {
 }
 
 // Change it to be real AST Node
+// TODO: Total reWrite here please
 class ModsMode {
-    constructor() {
+    constructor(opts) {
         this.name = 'mods';
         this.type = 'mods';
+        this.opts = opts || {};
     }
 
     toString() {
-        return `
-            // If there is no mods()() mode
-            // TODO extract only needed values from css files
-            mods() {
-                return Object.entries(this.props).reduce((acc, [key, val]) => {
-                    acc[key] = val === true ? 'yes' : val;
-                    return acc;
-                }, {});
-                return { ...this.props };
-            },
-        `;
+        if (this.opts.needBemjsonLikeAPI) {
+            return `
+                mods({ mods }) {
+                    return { ...mods };
+                }
+            `;
+        } else {
+            return `
+                // If there is no mods()() mode
+                // TODO extract only needed values from css files
+                mods() {
+                    return Object.entries(this.props).reduce((acc, [key, val]) => {
+                        acc[key] = val === true ? 'yes' : val;
+                        return acc;
+                    }, {});
+                    return { ...this.props };
+                }
+            `;
+        }
     }
 }
 
@@ -144,16 +172,20 @@ class AddAttrsFakeMode {
                 };
 
                 return {...__attrs, ...__addAttrs};
-            },
+            }
         `;
     }
 }
 
-function polyfillDecl(decl) {
+function polyfillDecl(decl, isExtraDecl) {
     if (decl.hasMode('addAttrs')) {
         const addAttrsMode = decl.getMode('addAttrs');
         decl.deleteMode('addAttrs');
         const attrsMode = decl.getMode('attrs');
+        // Should call base only for addAttrs not for attrs
+        // And only if we have more then one addAttrs for decl
+        // Then we generate extraDecl and call __base from mode
+        isExtraDecl && (addAttrsMode.shouldCallBase = true);
 
         const fakeAddAttrsMode = new AddAttrsFakeMode(attrsMode, addAttrsMode);
         decl.replaceMode('attrs', fakeAddAttrsMode);
@@ -200,9 +232,8 @@ function buildDeclsFromPredicate(p) {
             }
         } else {
             if (decl.hasMode(mode.name)) {
-                mode.shouldCallBase = true;
                 const extraDecl = new BemReactDecl(bemEntity, [mode]);
-                decls.push([bemEntity, polyfillDecl(extraDecl)]);
+                decls.push([bemEntity, polyfillDecl(extraDecl, true)]);
             } else {
                 decl.addMode(mode.name, mode);
             }
@@ -403,6 +434,8 @@ function transform(opts={}) {
 
 const bemReactPath = opts.bemPath || require.resolve('bem-react-core');
 const importReact = opts.noReactImport ? '' : `import React from 'react';`;
+const bemjsonLike = opts.needBemjsonLikeAPI;
+bemjsonLike && (opts.needModsMode = true);
 
 // TODO decl/declMod and path to react need be params
 const header = `${importReact}
@@ -456,6 +489,17 @@ return function(code, mainEntity) {
             node.update('');
         }
 
+        // TODO add apply with second argument
+        // Change apply()
+        if (
+            node.type === 'CallExpression' &&
+            node.callee.type === 'Identifier' &&
+            node.arguments.length === 1 &&
+            node.arguments[0].type === 'Literal'
+        ) {
+            node.update(`this.${node.arguments[0].value}(this.props)`);
+        }
+
         // Change isSimple to global
         if (
             node.type === 'MemberExpression' &&
@@ -481,7 +525,7 @@ return function(code, mainEntity) {
             node.type === 'ObjectExpression' &&
             node.properties.length !== 0
         ) {
-            const hasBlock = false;
+            let hasBlock = false;
             const isBemjson = node.properties.filter(prop => {
                 if (prop.key.name === 'block') {
                     hasBlock = true;
@@ -503,10 +547,10 @@ return function(code, mainEntity) {
                     }
                 }`;
                 const bemJSON = nEval(`(${bemjson})`);
-                // if (!hasBlock) {
-                    // TODO get block from context
-                    bemJSON.block = 'Button2';
-                //}
+                if (!hasBlock) {
+                  // TODO get block from context
+                  bemJSON.block = 'Button2';
+                }
                 log(bemJSON);
 
                 bemjsonToDecl.convert(bemJSON)
@@ -631,7 +675,6 @@ return function(code, mainEntity) {
     let exportStr = '';
 
     const applyDecls = opts.needToApplyDecls;
-    const bemjsonLike = opts.needBemjsonLikeAPI;
 
     declsMap.forEach((decls, entityID) => {
         const variableName = pascalCase(entityID);
@@ -642,7 +685,7 @@ return function(code, mainEntity) {
         declsStr += decls.map((decl, i) => {
             if (i === 0) {
                 if (opts.needModsMode && needModsMode) {
-                    decl.addMode('mods', new ModsMode());
+                    decl.addMode('mods', new ModsMode(opts));
                 }
                 if (applyDecls) {
                     return `const ${variableName} = (${decl.toString()}`;
