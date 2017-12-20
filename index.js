@@ -26,6 +26,8 @@ var falafel = require('falafel');
 
 var devnull = require('./lib/devnull.js');
 
+const { BemReactDecl } = require('./lib/bem-react-core');
+
 // var formatRule = require('./lib/rules/format.js');
 // var depsObjIsArray = require('./lib/rules/depsObjIsArray.js');
 // var blockNameShortcut = require('./lib/rules/blockNameShortcut.js');
@@ -39,8 +41,9 @@ class Mode {
         this.type = this.name;
         this.node = node;
 
+        this.matchers = [];
+
         if (node.parent.type === 'MemberExpression') {
-            debugger;
             console.log(this.name);
             this.body = node.parent.parent.parent.arguments[0];
             this.predicateNode = node.parent.object
@@ -50,7 +53,8 @@ class Mode {
         }
     }
 
-    toString(matchers) {
+    toString() {
+        const matchers = this.matchers;
         if (matchers.length) {
             let fn = 'function() {';
             fn += matchers.map(match => `if (!(${match}.call(this))) { return; }`).join('\n');
@@ -75,7 +79,9 @@ class ModeHOC extends Mode {
         this.isHoc = true;
     }
 
-    toString(matchers) {
+    toString() {
+        const matchers = this.matchers;
+
         let fn = '(Component) => (props) => {';
         let retComp = this.type === 'def' ? 'return <Component {...__props} />;' : 'return <Component {...__props} {...__ret} />;';
         if (matchers.length) {
@@ -99,11 +105,33 @@ class ModeHOC extends Mode {
     }
 }
 
+// Change it to be real AST Node
+class ModsMode {
+    constructor() {
+        this.name = 'mods';
+        this.type = 'mods';
+    }
+
+    toString() {
+        return `
+            // If there is no mods()() mode
+            // TODO extract only needed values from css files
+            mods() {
+                return Object.entries(this.props).reduce((acc, [key, val]) => {
+                    acc[key] = val === true ? 'yes' : val;
+                    return acc;
+                }, {});
+                return { ...this.props };
+            },
+        `;
+    }
+}
+
 function blockDecl(blockName, modes, matchers) {
     let decl = 'decl';
 
     decl += '({\n';
-    decl += `block: ${blockName},`;
+    decl += `block: '${blockName}',`;
 
     // TODO: add these mode if there is no and option for _visible => _visible_yes
     // ANd add this only if there is no mods mode per all definition for this block
@@ -144,8 +172,8 @@ function elemDecl(blockName, elemName, modes) {
     let decl = 'decl';
 
     decl += '({\n';
-    decl += `block: ${blockName},`;
-    decl += `elem: ${elemName},`;
+    decl += `block: '${blockName}',`;
+    decl += `elem: '${elemName}',`;
 
     // TODO: TEMPORARY
     decl += `modes: ${modes.length},`;
@@ -189,8 +217,8 @@ function elemModDecl(blockName, elemName, mods, modes) {
     return decl;
 }
 
-function buildPredicate(p) {
-    const decls = [];
+function buildDeclsFromPredicate(p) {
+    const decls = new Map();
 
     // one sub-predicate
     const blockSP = p.predicateParts.filter(sub => sub.type === 'block')[0];
@@ -200,64 +228,116 @@ function buildPredicate(p) {
     const elemModSPs = p.predicateParts.filter(sub => sub.type === 'elemMod');
     const matchSPs = p.predicateParts.filter(sub => sub.type === 'match') || [];
 
-    // TODO: matchSPs
+    const blockName = blockSP.condition.value;
+    const elemName = elemSP && elemSP.condition.value;
 
-    if (elemSP) {
-        decls.push(
-            elemDecl(
-                blockSP.condition.source(),
-                elemSP.condition.source(),
-                p.modes,
-                matchSPs.map(sp => sp.condition.source())
-            )
-        );
+    // TODO block_mod and elem_mod
+    const bemEntity = BemEntity.create({
+        block: blockName,
+        elem: elemName
+    });
 
-        if (elemModSPs.length) {
-            decls.push(
-                elemModDecl(
-                    blockSP.condition.source(),
-                    elemSP.condition.source(),
-                    elemMods.map(sp => {
-                        return {
-                            modName: sp.condition.source(),
-                            modVal: sp.secondCondition ? sp.secondCondition.source() : '*'
-                        };
-                    }),
-                    p.modes,
-                    matchSPs.map(sp => sp.condition.source())
-                )
-            );
+    const decl = new BemReactDecl(bemEntity);
+
+    // Prepare modes
+    p.modes.forEach(mode => {
+        if (matchSPs.length) {
+            mode.matchers = mode.matchers.concat(matchSPs.map(sp => sp.condition.source()));
         }
 
-        if (modDecl.length) {
-            // TODO add context to block decl and use them in modDecl
+        if (mode.type === 'def' || mode.type === 'js') {
+            if (decl.hoc) {
+                // We could add only one hoc per decl
+                decls.set(bemEntity, new BemReactDecl(bemEntity, [], mode));
+            } else {
+                decl.hoc = mode;
+            }
+        } else {
+            decl.addMode(mode.name, mode);
         }
-    } else {
-        decls.push(
-            blockDecl(
-                blockSP.condition.source(),
-                p.modes,
-                matchSPs.map(sp => sp.condition.source())
-            )
-        );
-        if (modSPs.length) {
-            decls.push(
-                modDecl(
-                    blockSP.condition.source(),
-                    modSPs.map(sp => {
-                        return {
-                            modName: sp.condition.source(),
-                            modVal: sp.secondCondition ? sp.secondCondition.source() : '*'
-                        };
-                    }),
-                    p.modes,
-                    matchSPs.map(sp => sp.condition.source())
-                )
-            );
-        }
-    }
+    });
+
+    decls.set(bemEntity, decl);
 
     return decls;
+
+    // if (elemSP) {
+    //     const elemName = elemSP.condition.value;
+
+    //     decls.set(
+    //         BemEntity.create({
+    //             block: blockName,
+    //             elem: elemName
+    //         }),
+    //         elemDecl(
+    //             blockName,
+    //             elemName,
+    //             p.modes,
+    //             matchSPs.map(sp => sp.condition.source())
+    //         )
+    //     );
+
+    //     // TODO elemMods
+
+    //     // if (elemModSPs.length) {
+    //     //     const modName = sp.condition.value;
+    //     //     const modVal = sp
+    //     //     BemEntity.create({
+    //     //         block: blockName,
+    //     //         elem: elemName,
+    //     //         mod: {
+    //     //         }
+    //     //     }),
+    //     //     decls.set(
+    //     //         elemModDecl(
+    //     //             blockSP.condition.source(),
+    //     //             elemSP.condition.source(),
+    //     //             elemMods.map(sp => {
+    //     //                 return {
+    //     //                     modName: sp.condition.source(),
+    //     //                     modVal: sp.secondCondition ? sp.secondCondition.source() : '*'
+    //     //                 };
+    //     //             }),
+    //     //             p.modes,
+    //     //             matchSPs.map(sp => sp.condition.source())
+    //     //         )
+    //     //     );
+    //     // }
+
+    //     if (modDecl.length) {
+    //         // TODO add context to block decl and use them in modDecl
+    //     }
+    // } else {
+    //     decls.set(
+    //         BemEntity.create({
+    //             block: blockName
+    //         }),
+    //         blockDecl(
+    //             blockName,
+    //             p.modes,
+    //             matchSPs.map(sp => sp.condition.source())
+    //         )
+    //     );
+    //     // TODO block_mods
+
+    //     // if (modSPs.length) {
+    //     //     decls.push(
+    //     //         modDecl(
+    //     //             blockSP.condition.source(),
+    //     //             modSPs.map(sp => {
+    //     //                 return {
+    //     //                     modName: sp.condition.source(),
+    //     //                     modVal: sp.secondCondition ? sp.secondCondition.source() : '*'
+    //     //                 };
+    //     //             }),
+    //     //             p.modes,
+    //     //             matchSPs.map(sp => sp.condition.source())
+    //     //         )
+    //     //     );
+    //     // }
+    // }
+
+    // return decls;
 }
 
 const subPredicates = [];
@@ -728,24 +808,64 @@ export default decl({
                 pre.findParentPredicates();
             });
 
-            let decls = [];
+            const declsMap = new Map();
             subPredicates.forEach(pre => {
+
                 console.log(
                     pre.name, `(${pre.condition.type === 'Literal' ? pre.condition.value : 'fn'})`,
                     'm:', pre.modes.length, 'parts:', pre.predicateParts.map(p => p.name).join()
                 );
+
                 if (pre.modes.length) {
-                    decls = decls.concat(buildPredicate(pre));
+                    [...buildDeclsFromPredicate(pre).entries()]
+                        .reduce((acc, [entity, decl]) => {
+                            acc.has(entity.id) ?
+                                acc.get(entity.id).push(decl) :
+                                acc.set(entity.id, [decl]);
+                            return acc;
+                        }, declsMap);
                 }
             });
 
+            const mainEntity = naming.parse(path.basename(file.path, '.bemhtml.js'));
+
+            console.log();
+            console.log();
+            console.log('MAIN', mainEntity);
+            console.log();
+
+            let declsStr = '\n\n';
+            let exportStr = '';
+            declsMap.forEach((decls, entityID) => {
+                const variableName = pascalCase(entityID);
+
+                // TODO: get these from styles
+                const needModsMode = !decls.every(decl => decl.hasMode('mods'));
+
+                declsStr += decls.map((decl, i) => {
+                    if (i === 0) {
+                        if (needModsMode) {
+                            decl.addMode('mods', new ModsMode());
+                        }
+                        return `const ${variableName} = ${decl.toString()}`;
+                    } else {
+                        return decl.toString();
+                    }
+                }).join('\n\n');
+
+                if (entityID === mainEntity.id) {
+                    exportStr += `\nexport default ${variableName};`;
+                }
+            })
+
+            // TODO: add imports from *.deps.js
             importsPerFile.forEach((entities, entityId) => {
                 const entity = naming.parse(entityId);
                 const className = pascalCase(entityId);
                 imports.push(...importResolver(className, entity, entities));
             });
-            console.log(imports);
-            file.contents = Buffer.from(header + imports.join('\n') + `\nmodule.exports = ${decls.join('\n')}`);
+
+            file.contents = Buffer.from(header + imports.join('\n') + declsStr + exportStr);
         } catch (err) {
             file.error = err;
             console.log(err);
