@@ -22,6 +22,7 @@ class Mode {
         this.node = node;
 
         this.matchers = [];
+        this.shouldCallBase = false;
 
         if (node.parent.type === 'MemberExpression') {
             log(this.name);
@@ -35,19 +36,29 @@ class Mode {
 
     toBodyString() {
         const matchers = this.matchers;
+        const shouldCallBase = this.shouldCallBase;
+        const body = this.body;
+
+        let fn = 'function() {';
         if (matchers.length) {
-            let fn = 'function() {';
             fn += matchers.map(match => `if (!(${match}.call(this))) { return; }`).join('\n');
-            if (this.body.type === 'FunctionExpression') {
-                fn += this.body.body.body.map(statement => statement.source()).join('\n');
-            } else {
-                fn += `return ${this.body.source()};`;
-            }
-            fn += '}';
-            return fn;
-        } else {
-            return this.body.source();
         }
+        if (shouldCallBase) {
+            fn += `const __base = this.__base(this.props);`;
+            fn += `const __useBase = (function() {`;
+        }
+        if (body.type === 'FunctionExpression') {
+            fn += body.body.body.map(statement => statement.source()).join('\n');
+        } else {
+            fn += `return ${body.source()};`;
+        }
+        if (shouldCallBase) {
+            fn += `}.call(this));`;
+            // TODO what if base is node {} ? and we need return string for example?
+            fn += `return { ...__useBase, ...__base };`
+        }
+        fn += '}';
+        return fn;
     }
 
     toString() {
@@ -138,8 +149,21 @@ class AddAttrsFakeMode {
     }
 }
 
+function polyfillDecl(decl) {
+    if (decl.hasMode('addAttrs')) {
+        const addAttrsMode = decl.getMode('addAttrs');
+        decl.deleteMode('addAttrs');
+        const attrsMode = decl.getMode('attrs');
+
+        const fakeAddAttrsMode = new AddAttrsFakeMode(attrsMode, addAttrsMode);
+        decl.replaceMode('attrs', fakeAddAttrsMode);
+    }
+
+    return decl;
+}
+
 function buildDeclsFromPredicate(p) {
-    const decls = new Map();
+    const decls = [];
 
     // one sub-predicate
     const blockSP = p.predicateParts.filter(sub => sub.type === 'block')[0];
@@ -169,25 +193,23 @@ function buildDeclsFromPredicate(p) {
         if (mode.type === 'def' || mode.type === 'js') {
             if (decl.hoc) {
                 // We could add only one hoc per decl
-                decls.set(bemEntity, new BemReactDecl(bemEntity, [], mode));
+                const extraDecl = new BemReactDecl(bemEntity, [], mode);
+                decls.push([bemEntity, polyfillDecl(extraDecl)]);
             } else {
                 decl.hoc = mode;
             }
         } else {
-            decl.addMode(mode.name, mode);
+            if (decl.hasMode(mode.name)) {
+                mode.shouldCallBase = true;
+                const extraDecl = new BemReactDecl(bemEntity, [mode]);
+                decls.push([bemEntity, polyfillDecl(extraDecl)]);
+            } else {
+                decl.addMode(mode.name, mode);
+            }
         }
     });
 
-    if (decl.hasMode('addAttrs')) {
-        const addAttrsMode = decl.getMode('addAttrs');
-        decl.deleteMode('addAttrs');
-        const attrsMode = decl.getMode('attrs');
-
-        const fakeAddAttrsMode = new AddAttrsFakeMode(attrsMode, addAttrsMode);
-        decl.replaceMode('attrs', fakeAddAttrsMode);
-    }
-
-    decls.set(bemEntity, decl);
+    decls.unshift([bemEntity, polyfillDecl(decl)]);
 
     return decls;
 
@@ -594,7 +616,7 @@ return function(code, mainEntity) {
         );
 
         if (pre.modes.length) {
-            [...buildDeclsFromPredicate(pre).entries()]
+            buildDeclsFromPredicate(pre)
                 .reduce((acc, [entity, decl]) => {
                     acc.has(entity.id) ?
                         acc.get(entity.id).push(decl) :
@@ -622,14 +644,18 @@ return function(code, mainEntity) {
                 if (opts.needModsMode && needModsMode) {
                     decl.addMode('mods', new ModsMode());
                 }
-                return `const ${variableName} = ${decl.toString()}`;
+                if (applyDecls) {
+                    return `const ${variableName} = (${decl.toString()}`;
+                } else {
+                    return `const ${variableName} = ${decl.toString()}`;
+                }
             } else {
                 return `${decl.toString()}`;
             }
         }).join(applyDecls ? ', \n\n' : ';\n\n');
 
         if (applyDecls) {
-            declsStr += '.applyDecls();';
+            declsStr += ').applyDecls();';
         }
 
         if (mainEntity && entityID === mainEntity.id) {
