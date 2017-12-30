@@ -1,7 +1,7 @@
 var fixtures = require('./fixtures')('bemhtml');
 var test = fixtures.test;
 
-xdescribe('BEMJSON elem', function() {
+describe('BEMJSON elem', function() {
   it('should assume elem=\'\' is a falsey value', function() {
     test(function() {
       block('b1').elem('e1').def()(function() {
@@ -13,7 +13,7 @@ xdescribe('BEMJSON elem', function() {
     }, { block: 'b1' }, '<div class="b1"></div>');
   });
 
-  it('wildcard elem should be called before the matched templates',
+  xit('wildcard elem should be called before the matched templates',
     function() {
     test(function() {
       block('b1').content()(function() {

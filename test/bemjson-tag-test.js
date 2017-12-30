@@ -1,7 +1,7 @@
 var fixtures = require('./fixtures')('bemhtml');
 var test = fixtures.test;
 
-xdescribe('BEMJSON tag', function() {
+describe('BEMJSON tag', function() {
   it('should render default tag as `div`', function() {
     test(function() {},
     { block: 'b' },
@@ -18,12 +18,12 @@ xdescribe('BEMJSON tag', function() {
     'button');
   });
 
-  it('should render without tag', function() {
+  xit('should render without tag', function() {
     test(function() {
     }, { tag: false, content: 'ok' }, 'ok');
   });
 
-  it('should render empty string ' +
+  xit('should render empty string ' +
      'if block with no content and no tag', function() {
     test(function() {
     }, { block: 'test', tag: false }, '');

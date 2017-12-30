@@ -46,7 +46,7 @@ describe('Modes mods', function() {
     '<div class="button button_size_xl"></div>');
   });
 
-  it('should return this.mods by default', function() {
+  xit('should return this.mods by default', function() {
     test(function() {
       block('a').def()(function() { return JSON.stringify(apply('mods')); });
       block('b').def()(function() { return JSON.stringify(apply('mods')); });

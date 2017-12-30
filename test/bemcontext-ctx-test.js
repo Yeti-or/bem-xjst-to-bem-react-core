@@ -67,7 +67,7 @@ describe('BEMContext ctx object: tests for expected fields', function() {
     // 'e');
   });
 
-  it('should support this.ctx.mod', function() {
+  xit('should support this.ctx.mod', function() {
     test(function() {
       block('b').def()(function() {
         return this.ctx.mods.m;

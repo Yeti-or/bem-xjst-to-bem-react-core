@@ -15,18 +15,26 @@ require('chai').should();
 
 // TODO: https://github.com/bem-sdk-archive/bemjson-to-jsx/issues/43
 const classesInseteadOfTags = function(jsx, json) {
-    if (jsx.bemEntity) {
-        jsx.tag = jsx.bemEntity.elem ? jsx.bemEntity.id : pascalCase(jsx.bemEntity.id);
-    }
+//     if (jsx.bemEntity) {
+//         jsx.tag = jsx.bemEntity.elem ? jsx.bemEntity.id : pascalCase(jsx.bemEntity.id);
+//     }
 };
 
+// TODO Could we optimize this ??
 const unCopyMods = function (jsx, bemjson) {
-    const moveToMods = (type, mods) => {
-        jsx.props[type] = mods;
+    if (bemjson.attrs && typeof bemjson.attrs === 'object' && !Array.isArray(bemjson.attrs)) {
+        jsx.isBEMComponent && (jsx.props.attrs = bemjson.attrs);
     }
-    bemjson.elem
-        ? bemjson.elemMods && moveToMods('elemMods', bemjson.elemMods)
-        : bemjson.mods && moveToMods('mods', bemjson.mods);
+    if (jsx.isComponent && bemjson.hasOwnProperty('cls')) {
+        bemjson.cls && (jsx.props.className = bemjson.cls.toString().trim());
+        delete jsx.props.cls;
+    }
+    // const moveToMods = (type, mods) => {
+    //     jsx.props[type] = mods;
+    // }
+    // bemjson.elem
+    //     ? bemjson.elemMods && moveToMods('elemMods', bemjson.elemMods)
+    //     : bemjson.mods && moveToMods('mods', bemjson.mods);
 };
 
 const is_debug = process.env.DEBUG || false;
@@ -64,7 +72,9 @@ module.exports = function(engine) {
     // api.exportApply(template);
     template.apply = function(bemjson) {
 
-        const jsx = bemjsonToJSX().use([classesInseteadOfTags, unCopyMods]).process(bemjson).JSX;
+        const known = reactTemplate.knowComponents;
+
+        const jsx = bemjsonToJSX({ knowComponents: known }).use([classesInseteadOfTags, unCopyMods]).process(bemjson).JSX;
 
         const jsDataCode = babelTransform(`
             import React from 'react';

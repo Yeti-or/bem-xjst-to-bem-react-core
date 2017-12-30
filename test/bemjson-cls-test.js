@@ -1,7 +1,7 @@
 var fixtures = require('./fixtures')('bemhtml');
 var compile = fixtures.compile;
 
-xdescribe('BEMJSON cls', function() {
+describe('BEMJSON cls', function() {
   it('should not return undefined as cls value', function() {
     compile('')
       .apply({ cls: undefined })
@@ -74,7 +74,7 @@ xdescribe('BEMJSON cls', function() {
       .should.equal('<div class="hello"></div>');
   });
 
-  it('should escape cls', function() {
+  xit('should escape cls', function() {
     compile('')
       .apply({ block: 'b', cls: '">' })
       .should.equal('<div class="b &quot;>"></div>');

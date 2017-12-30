@@ -2,8 +2,9 @@ var fixtures = require('./fixtures')('bemhtml');
 var test = fixtures.test;
 var compile = fixtures.compile;
 
-xdescribe('BEMHTML engine tests', function() {
-  it('should compile example code', function() {
+describe('BEMHTML engine tests', function() {
+  // TODO matchers inside predicate body
+  xit('should compile example code', function() {
     test(function() {
       block('b1').tag()(
         elem('e1')('a'),
@@ -16,7 +17,8 @@ xdescribe('BEMHTML engine tests', function() {
     }, { block: 'b1', elem: 'e1' }, '<a class="b1__e1"></a>');
   });
 
-  it('should auto-insert !this.elem properly', function() {
+  // TODO content mode
+  xit('should auto-insert !this.elem properly', function() {
     test(function() {
       block('b1').content()({
         elem: 'e1'
@@ -41,7 +43,8 @@ xdescribe('BEMHTML engine tests', function() {
     }, { block: 'b1' }, '<div class="b1"><div class="b1__e1"></div></div>');
   });
 
-  it('should replace this.elem properly in hashmaps', function() {
+  // TODO content mode
+  xit('should replace this.elem properly in hashmaps', function() {
     test(function() {
       block('b1')(
         content()({
@@ -79,7 +82,8 @@ xdescribe('BEMHTML engine tests', function() {
     }, { block: 'b1' }, '<div class="b1">ok</div>');
   });
 
-  it('should order templates properly', function() {
+  //TODO mode bem
+  xit('should order templates properly', function() {
     test(function() {
       block('page').elem('css')(
         bem()(false),
@@ -96,7 +100,7 @@ xdescribe('BEMHTML engine tests', function() {
     }, '<link rel="stylesheet" href="ohai">');
   });
 
-  it('should support `.xjstOptions()`', function() {
+  xit('should support `.xjstOptions()`', function() {
     test(function() {
       block('b1').xjstOptions({ who: 'cares' }).content()(function() {
         return 'ok';
@@ -106,7 +110,7 @@ xdescribe('BEMHTML engine tests', function() {
     }, '<div class="b1">ok</div>');
   });
 
-  describe('xhtml option', function() {
+  xdescribe('xhtml option', function() {
     it('should close short tags by default', function() {
       compile('')
         .apply({ tag: 'br' })
@@ -126,7 +130,7 @@ xdescribe('BEMHTML engine tests', function() {
     });
   });
 
-  describe('omitOptionalEndTags option', function() {
+  xdescribe('omitOptionalEndTags option', function() {
     it('should omit optional end tags with option', function() {
       compile(function() {}, { omitOptionalEndTags: true })
         .apply({ tag: 'p', content: 'test' })
@@ -168,7 +172,7 @@ xdescribe('BEMHTML engine tests', function() {
     });
   });
 
-  describe('unquotedAttrs option', function() {
+  xdescribe('unquotedAttrs option', function() {
     it('should render class attr w/o quotes if spec allows', function() {
       test(function() {},
         { block: 'b' },

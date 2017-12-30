@@ -1,7 +1,7 @@
 var fixtures = require('./fixtures')('bemhtml');
 var test = fixtures.test;
 
-xdescribe('BEMJSON block', function() {
+describe('BEMJSON block', function() {
   it('should render block by default as div', function () {
     test(function() {}, [
       { block: 'b' }

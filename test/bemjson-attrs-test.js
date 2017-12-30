@@ -1,7 +1,7 @@
 var fixtures = require('./fixtures')('bemhtml');
 var test = fixtures.test;
 
-xdescribe('BEMJSON attrs', function() {
+describe('BEMJSON attrs', function() {
   it('should render without block by default', function () {
     test(function() {},
       { attrs: { a: 'b' } },
@@ -78,7 +78,7 @@ xdescribe('BEMJSON attrs', function() {
       '<div class="b"></div>');
   });
 
-  it('should support objects as attrs values', function() {
+  xit('should support objects as attrs values', function() {
     test(function() {
       block('b1').attrs()(function() {
         return { prop1: { block: 'b2' } };

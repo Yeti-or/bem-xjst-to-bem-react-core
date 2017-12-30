@@ -34,7 +34,7 @@ describe('Modes tag', function() {
     '<button class="button"></button>');
   });
 
-  xit('should override user tag', function() {
+  it('should override user tag', function() {
     test(function() {
       block('button').tag()('button');
     },
@@ -42,7 +42,7 @@ describe('Modes tag', function() {
     '<button class="button"></button>');
   });
 
-  xit('user can choose between tag in bemjson ' +
+  it('user can choose between tag in bemjson ' +
     'and custom value in templates', function() {
     test(function() {
       block('b').tag()(function() {
@@ -51,6 +51,7 @@ describe('Modes tag', function() {
     },
     { content: [ { block: 'b', tag: 'em' }, { block: 'b' } ] },
     '<div><em class="b"></em><strong class="b"></strong></div>');
+    // TODO: transfrom to ReactFragment
     // [ { block: 'b', tag: 'em' }, { block: 'b' } ],
     // '<em class="b"></em><strong class="b"></strong>');
   });
