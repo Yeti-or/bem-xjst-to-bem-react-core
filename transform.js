@@ -143,7 +143,7 @@ class ModsMode {
                         acc[key] = val === true ? 'yes' : val;
                         return acc;
                     }, {});
-                    return { ...this.props };
+                    // return { ...this.props };
                 }
             `;
         }
@@ -443,7 +443,27 @@ bemjsonLike && (opts.needModsMode = true);
 
 // TODO decl/declMod and path to react need be params
 const header = `${importReact}
-import {decl, declMod} from '${bemReactPath}';
+// import BEM, { decl, declMod } from '${bemReactPath}';
+
+import {Component} from 'react';
+import PropTypes from 'prop-types';
+import naming from '@bem/sdk.naming.presets';
+import core from '${bemReactPath}/dist/core.js';
+
+// Component.bool2string = val => val ? 'yes' : false;
+
+// TODO make it optional
+const {Bem, decl, declMod} = core({
+    preset: {
+        Render: React.createElement.bind(React),
+        Base: Component,
+        classAttribute: 'className',
+        PropTypes
+    },
+    naming: naming['origin']
+});
+
+const BEM = Bem;
 
 const isSimple = (obj) => typeof obj === 'string' || typeof obj === 'number';
 
@@ -539,40 +559,57 @@ return function(code, mainEntity) {
             }).length !== 0;
             if (isBemjson) {
                 // const bemjson = nEval(node.source());
-                const bemjson = `{
-                    ${
-                        node.properties.map(prop =>
-                            `"${prop.key.source()}": ${
-                                    ( prop.value.type === 'Literal' || prop.value.type === 'ObjectExpression' ) ?
-                                        `${prop.value.source()}` :
-                                        `"_${prop.value.source()}_"`
-                                }`
-                        ).join(',\n')
-                    }
-                }`;
+                debugger;
+                const wrapBemjson = (node) => {
+                    const bemjson = `{
+                        ${
+                            node.properties.map(prop =>
+                                `"${prop.key.source()}": ${
+                                        ( prop.value.type === 'Literal' ) ?
+                                            `${prop.value.source()}` :
+                                                 ( prop.value.type === 'ObjectExpression' ) ?
+                                                    `${wrapBemjson(prop.value)}` :
+                                                    `"_${prop.value.source().replace(/\"/g, "'")}_"`
+                                    }`
+                            ).join(',')
+                        }
+                    }`;
+                    return bemjson
+                        .trim()
+                        .replace(/\s\s/g, '')
+                        .replace(/<.*\/>/g, '\'_$&_\'')
+                        .replace(/<.*>.*<\/.*>/g, '\'_$&_\'');
+                }
+                const bemjson = wrapBemjson(node);
+
+                log('BEMJSON>>>>>');
+                log(bemjson);
+                log('<<<<<BEMJSON');
+
                 const bemJSON = nEval(`(${bemjson})`);
                 if (!hasBlock) {
                   // TODO get block from context
-                  bemJSON.block = 'Button2';
+                  bemJSON.block = pascalCase(mainEntity.block);
                 }
-                log(bemJSON);
 
-                bemjsonToDecl.convert(bemJSON)
+                var known = bemjsonToDecl.convert(bemJSON)
                     .map(BemEntity.create)
-                    .reduce((acc, entity) => {
-                        // group by block and elems
-                        const entityId = BemEntity.create({ block: entity.block, elem: entity.elem }).toString();
-                        acc.has(entityId) ? acc.get(entityId).push(entity) : acc.set(entityId, [entity]);
-                        return acc;
-                    }, importsPerFile);
+                    // .reduce((acc, entity) => {
+                    //     // group by block and elems
+                    //     const entityId = BemEntity.create({ block: entity.block, elem: entity.elem }).toString();
+                    //     acc.has(entityId) ? acc.get(entityId).push(entity) : acc.set(entityId, [entity]);
+                    //     return acc;
+                    // }, importsPerFile);
 
                 log(imports);
 
-                const JSX = bemjsonToJSX().process(bemJSON).JSX;
+                const JSX = bemjsonToJSX({ knowComponents: known }).process(bemJSON).JSX;
                 log(JSX);
+                log('<<<<<<<<<JSX');
                 node.update(`(${
                     JSX
                         .replace('{"_', '{').replace('_"}', '}')
+                        .replace('\'_', '').replace('_\'', '')
                         .replace('"_', '{').replace('_"', '}')
                 })`);
             }
@@ -678,10 +715,19 @@ return function(code, mainEntity) {
     let declsStr = '\n\n';
     let exportStr = '';
 
-    const applyDecls = opts.needToApplyDecls;
+    let applyDecls = opts.needToApplyDecls;
 
+    const knowComponents = [];
+    // TODO: sort by entityId, move elem variable declarations to imports
+    // Or change const to var ?
     declsMap.forEach((decls, entityID) => {
         const variableName = pascalCase(entityID);
+        const entity = naming.parse(entityID);
+        knowComponents.push(entity);
+
+        if (mainEntity && (!opts.needToApplyDecls)) {
+            applyDecls = (entityID !== mainEntity.id);
+        }
 
         // TODO: get these from styles
         const needModsMode = !decls.every(decl => decl.hasMode('mods'));
@@ -702,13 +748,16 @@ return function(code, mainEntity) {
         }).join(applyDecls ? ', \n\n' : ';\n\n');
 
         if (applyDecls) {
-            declsStr += ').applyDecls();';
+            declsStr += ').applyDecls();\n\n';
+        } else {
+            declsStr += ';\n\n';
         }
 
         if (mainEntity && entityID === mainEntity.id) {
             exportStr += `\nexport default ${variableName};`;
         }
     })
+
 
     // TODO: add imports from *.deps.js
     importsPerFile.forEach((entities, entityId) => {
@@ -721,6 +770,7 @@ return function(code, mainEntity) {
 
     return {
         header,
+        knowComponents,
         imports,
         decls: declsMap,
         declsStr,
