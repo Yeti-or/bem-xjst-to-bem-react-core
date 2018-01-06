@@ -448,7 +448,7 @@ const header = `${importReact}
 import {Component} from 'react';
 import PropTypes from 'prop-types';
 import naming from '@bem/sdk.naming.presets';
-import core from '${bemReactPath}/dist/core.js';
+import core from '${bemReactPath}/dist/Core.js';
 
 // Component.bool2string = val => val ? 'yes' : false;
 
