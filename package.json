@@ -25,7 +25,7 @@
     "@bem/import-notation": "^1.1.2",
     "@bem/naming": "^2.0.0-6",
     "bemjson-to-decl": "^1.0.3",
-    "bemjson-to-jsx": "^1.9.1",
+    "bemjson-to-jsx": "^1.10.0",
     "falafel": "^2.1.0",
     "gulp-cst": "^1.1.0",
     "node-eval": "^2.0.0",
