@@ -13,13 +13,6 @@ const transform = require('../transform');
 
 require('chai').should();
 
-// TODO: https://github.com/bem-sdk-archive/bemjson-to-jsx/issues/43
-const classesInseteadOfTags = function(jsx, json) {
-//     if (jsx.bemEntity) {
-//         jsx.tag = jsx.bemEntity.elem ? jsx.bemEntity.id : pascalCase(jsx.bemEntity.id);
-//     }
-};
-
 // TODO Could we optimize this ??
 const unCopyMods = function (jsx, bemjson) {
     if (bemjson.attrs && typeof bemjson.attrs === 'object' && !Array.isArray(bemjson.attrs)) {
@@ -74,7 +67,7 @@ module.exports = function(engine) {
 
         const known = reactTemplate.knowComponents;
 
-        const jsx = bemjsonToJSX({ knowComponents: known }).use([classesInseteadOfTags, unCopyMods]).process(bemjson).JSX;
+        const jsx = bemjsonToJSX({ knowComponents: known }).use([unCopyMods]).process(bemjson).JSX;
 
         const jsDataCode = babelTransform(`
             import React from 'react';
