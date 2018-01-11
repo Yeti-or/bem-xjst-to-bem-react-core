@@ -4,18 +4,18 @@ var test = fixtures.test;
 describe('BEMJSON attrs', function() {
   it('should render without block by default', function () {
     test(function() {},
-      { attrs: { a: 'b' } },
-      '<div a="b"></div>');
+      { attrs: { width: '200px' } },
+      '<div width="200px"></div>');
   });
 
   it('should render with block', function () {
     test(function() {
-    }, { block: 'b1', attrs: { a: 'b' } }, '<div class="b1" a="b"></div>');
+    }, { block: 'b1', attrs: { width: '200px' } }, '<div class="b1" width="200px"></div>');
   });
 
   it('should render with just tag', function () {
     test(function() {
-    }, { tag: 'span', attrs: { a: 'b' } }, '<span a="b"></span>');
+    }, { tag: 'span', attrs: { width: '200px' } }, '<span width="200px"></span>');
   });
 
   it('should not return undefined as attrs value', function() {
