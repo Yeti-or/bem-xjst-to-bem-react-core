@@ -65,9 +65,9 @@ module.exports = function(engine) {
     // api.exportApply(template);
     template.apply = function(bemjson) {
 
-        const known = reactTemplate.knowComponents;
+        const known = reactTemplate.knownComponents;
 
-        const jsx = bemjsonToJSX({ knowComponents: known }).use([unCopyMods]).process(bemjson).JSX;
+        const jsx = bemjsonToJSX({ knownComponents: known }).use([unCopyMods]).process(bemjson).JSX;
 
         const jsDataCode = babelTransform(`
             import React from 'react';

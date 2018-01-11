@@ -463,8 +463,6 @@ const {Bem, decl, declMod} = core({
     naming: naming['origin']
 });
 
-const BEM = Bem;
-
 const isSimple = (obj) => typeof obj === 'string' || typeof obj === 'number';
 
 `;
@@ -603,7 +601,7 @@ return function(code, mainEntity) {
 
                 log(imports);
 
-                const JSX = bemjsonToJSX({ knowComponents: known }).process(bemJSON).JSX;
+                const JSX = bemjsonToJSX({ knownComponents: known }).process(bemJSON).JSX;
                 log(JSX);
                 log('<<<<<<<<<JSX');
                 node.update(`(${
@@ -717,13 +715,13 @@ return function(code, mainEntity) {
 
     let applyDecls = opts.needToApplyDecls;
 
-    const knowComponents = [];
+    const knownComponents = [];
     // TODO: sort by entityId, move elem variable declarations to imports
     // Or change const to var ?
     declsMap.forEach((decls, entityID) => {
         const variableName = pascalCase(entityID);
         const entity = naming.parse(entityID);
-        knowComponents.push(entity);
+        knownComponents.push(entity);
 
         if (mainEntity && (!opts.needToApplyDecls)) {
             applyDecls = (entityID !== mainEntity.id);
@@ -770,7 +768,7 @@ return function(code, mainEntity) {
 
     return {
         header,
-        knowComponents,
+        knownComponents,
         imports,
         decls: declsMap,
         declsStr,
